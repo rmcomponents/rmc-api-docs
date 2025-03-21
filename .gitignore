@@ -1,0 +1,10 @@
+# only keep the .example.py
+auth_flow.py
+
+__pycache__
+*.swp
+env
+venv
+.env
+.venv
+
