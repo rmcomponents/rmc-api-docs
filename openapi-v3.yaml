@@ -1,0 +1,254 @@
+openapi: "3.0.3"
+info:
+  title: RMC Catalog API
+  version: "0.5.0"
+  description: >
+    The RMC Catalog API provides access to parts data—including pricing, stock levels, and manufacturer details—for integration with inventory systems.
+  contact:
+    name: Andreas Brandscher
+    email: andreas.brandscher@rm-components.de
+  license:
+    name: Proprietary
+servers:
+  - url: /v1
+paths:
+  /catalog/query:
+    post:
+      summary: Query catalog parts
+      description: Expects a JSON payload with the following structure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        "200":
+          description: Successful response with parts data and metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        "400":
+          description: Invalid request (e.g., missing or malformed part numbers)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - OAuth2Application: []
+      tags:
+        - catalog
+components:
+  schemas:
+
+    PartDescription:
+      type: object
+      description: Part description in multiple languages. At least one language is guaranteed.
+      properties:
+        de:
+          type: string
+          description: 'Part description in German.'
+        en:
+          type: string
+          description: 'Part description in English.'
+      anyOf:
+        - required: ["de"]
+        - required: ["en"]
+    PartResult:
+      type: object
+      properties:
+        currency:
+          type: string
+          pattern: "^[A-Z]{3}$"
+          description: >
+            Three-letter (ISO 4217) code representing the sales currency.
+        delivery_time_days:
+          type: integer
+          description: 'Expected delivery time in days.'
+        description:
+          allOf:
+            - $ref: '#/components/schemas/PartDescription'
+          description: 'Part description in English and/or German.'
+        index:
+          type: integer
+          description: 'Zero-based index of the part in the original query.'
+        is_custom_pricing:
+          type: boolean
+          description: |
+            Indicates if customer-specific pricing is applied.
+            When false, the part uses the standard pricing schedule.
+        is_rohs_compliant:
+          type: boolean
+          description: 'True if the part complies to the RoHs regulation.'
+        manufacturer:
+          type: string
+          description: 'Manufacturer''s name.'
+        moq:
+          type: integer
+          description: 'Minimum order quantity.'
+        packaging:
+          type: string
+          description: 'Packaging type of the part (usually "Reel").'
+        packing_unit:
+          type: integer
+          description: 'Minimum order quantity.'
+        part_number:
+          type: string
+          description: 'Alphanumeric part number.'
+        part_number_exact:
+          type: string
+          description: 'Exact part number (excluding whitespace).'
+        price_tiers:
+          type: array
+          description: |
+            Defines tiered pricing. Each tier specifies a minimum quantity (Breakpoint)
+            and the corresponding unit price.
+          items:
+            $ref: '#/components/schemas/PriceTier'
+        production_status:
+          type: string
+          description: 'Production status as stated by the manufacturer (e.g., "Mass Production").'
+        sku:
+          type: string
+          description: 'Our internal SKU. Identical to `PartResult.part_number_exact` in most cases.'
+        stock:
+          type: integer
+          description: 'Stock on hand.'
+    PriceTier:
+      type: object
+      description: PriceTier represents one pricing tier.
+      properties:
+        breakpoint:
+          type: integer
+          description: 'Minimum quantity required for the corresponding price.'
+        unit_price:
+          type: number
+          description: 'Unit price. Currency is specified in `PartResult.Currency`.'
+        unit:
+          type: string
+          description: 'Currently constant "single".'
+    PartNumberFilter:
+      type: object
+      description: 'Holds a part number and an optional quantity.'
+      required:
+        - value
+      properties:
+        value:
+          type: string
+          description: 'The part number.'
+        quantity:
+          type: integer
+          description: 'Optional quantity.'
+    QueryRequest:
+      type: object
+      description: Request object for part queries.
+      properties:
+        part_number:
+          type: array
+          description: >
+            PartNumber accepts either a string or an object with 'value' and 'quantity'.
+          items:
+            oneOf:
+              - type: string
+              - $ref: '#/components/schemas/PartNumberFilter'
+          example: ["ABC123", {"value": "ABC123", "quantity": 100000}, "DEF456"]
+        pn_matching:
+          type: string
+          enum:
+            - exact
+            - alphanumeric
+          description: |-
+            Either "alphanumeric" or "exact". When set to "alphanumeric", non-alphanumeric characters
+            are excluded from part number matching (whitespace is always excluded).
+          default: alphanumeric
+        apply_filter_quantity:
+          type: boolean
+          description: |-
+            If true, any part for which the requested quantity exceeds available stock is excluded
+            from the results.
+          default: false
+        ignore_empty_parts:
+          type: boolean
+          description: |-
+            If true, empty part numbers will be ignored and will not return an error. Indexes are preserved.
+          default: false
+    ErrorResponse:
+      type: object
+      properties:
+        status:
+          description: Constant value "error".
+          type: string
+          enum:
+            - error
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/Meta'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+    Meta:
+      type: object
+      properties:
+        duration_ms:
+          type: number
+        request_id:
+          type: string
+        timestamp:
+          type: string
+        api_version:
+          type: string
+    Notification:
+      type: object
+      required:
+        - message
+        - code
+      properties:
+        index:
+          description: Zero-based index (if there are multiple entities).
+          type: integer
+        concerns:
+          description: Name of the field the error refers to.
+          type: string
+        message:
+          description: Error message.
+          type: string
+        code:
+          description: Error code.
+          type: string
+    SuccessResponse:
+      type: object
+      properties:
+        status:
+          description: Constant value "success".
+          type: string
+          enum:
+            - success
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartResult'
+        meta:
+          $ref: '#/components/schemas/Meta'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+  securitySchemes:
+    OAuth2Application:
+      type: oauth2
+      flows:
+        clientCredentials:
+          # tokenUrl: https://rmcapi.auth.eu-central-1.amazoncognito.com/oauth2/token
+          scopes:
+            access: "Grants read access"
